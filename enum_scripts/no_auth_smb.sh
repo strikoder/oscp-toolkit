@@ -32,7 +32,7 @@ log "Saving to $OUT"
 # 1) NetBIOS names (if available)
 if command -v nmblookup >/dev/null; then
   log "nmblookup -A"
-  nmblookup -A "$IP"
+  nmblookup -A "$IP" || true
 fi
 
 # 2) Version & safe SMB NSE
@@ -71,7 +71,7 @@ if command -v nxc >/dev/null; then
     log "  nxc smb $IP as '$NAME'"
     nxc smb "$IP" -u "$USER" -p '' --rid-brute >>"$RID_TMP" || true
   done
-  awk '{print $6}' "$RID_TMP" > "$OUT/usernames.txt"
+  awk '{print $6}' "$RID_TMP" | sort -u > "$OUT/usernames.txt"
 else
   log "nxc not found in PATH, skipping RID brute"
   > "$OUT/usernames.txt"
