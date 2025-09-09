@@ -29,19 +29,21 @@ log(){ echo -e "[*] $*"; }
 
 log "Saving to $OUT"
 
-# 1) NetBIOS names (if available)
-if command -v nmblookup >/dev/null; then
-  log "nmblookup -A"
-  nmblookup -A "$IP" || true
-fi
+# 1) NetBIOS names
+log "nmblookup -A $IP"
+nmblookup -A "$IP" || true
+echo
 
-# 2) Version & safe SMB NSE
-log "Version + safe SMB scripts"
-nmap -Pn -p445 -sV --script "smb-protocols,smb2-time,smb2-security-mode,smb2-capabilities" "$IP"
+# 2) SMB version & safe NSE
+log "nmap safe SMB scripts"
+nmap -Pn -p445 -sV --script "smb-protocols,smb2-time,smb2-security-mode,smb2-capabilities" "$IP" || true
+echo
 
 # 3) smbclient null session share list
 log "smbclient -L (null)"
-SMBCLIENT_L="$(smbclient -N -L "\\\\$IP\\")"
+SMBCLIENT_L="$(smbclient -N -L "\\\\$IP\\")" || SMBCLIENT_L=""
+echo "$SMBCLIENT_L"
+echo
 
 # Parse shares for later
 readarray -t ALL_SHARES < <(printf "%s\n" "$SMBCLIENT_L" \
@@ -59,35 +61,31 @@ log "rpcclient basics"
   echo "enumdomusers"
   echo "enumdomgroups"
 } | rpcclient -U "" -N "$IP" || true
+echo
 
 # 5) NetExec RID brute
 log "NetExec RID brute (saving ONLY usernames.txt)"
 RID_TMP="$(mktemp)"
 trap 'rm -f "$RID_TMP"' EXIT
 
-if command -v nxc >/dev/null; then
-  for USER in "" "anonymous" "guest"; do
-    [[ -z "$USER" ]] && NAME="null" || NAME="$USER"
-    log "  nxc smb $IP as '$NAME'"
-    nxc smb "$IP" -u "$USER" -p '' --rid-brute >>"$RID_TMP" || true
-  done
-  awk '{print $6}' "$RID_TMP" | sort -u > "$OUT/usernames.txt"
-else
-  log "nxc not found in PATH, skipping RID brute"
-  > "$OUT/usernames.txt"
-fi
+
+for USER in "" "anonymous" "guest"; do
+  [[ -z "$USER" ]] && NAME="null" || NAME="$USER"
+  log "  nxc smb $IP as '$NAME'"
+  nxc smb "$IP" -u "$USER" -p '' --rid-brute >>"$RID_TMP" || true
+done
+awk '{print $6}' "$RID_TMP" | sort -u > "$OUT/usernames.txt"
+
 
 # 6) enum4linux-ng (optional)
-if command -v enum4linux-ng >/dev/null; then
-  log "enum4linux-ng -A"
-  enum4linux-ng -A "$IP" || true
-fi
+log "enum4linux-ng -A"
+enum4linux-ng -A "$IP" || true
+echo
 
 # 7) smbmap (optional)
-if command -v smbmap >/dev/null; then
-  log "smbmap share perms"
-  smbmap -H "$IP" -u ' ' -p ' ' || true
-fi
+log "smbmap share perms"
+smbmap -H "$IP" -u ' ' -p ' ' || true
+echo
 
 # 8) Full pulls via smbclient
 log "Downloading everything possible via smbclient to: $OUT/downloads"
@@ -111,10 +109,26 @@ for sh in "${ALL_SHARES[@]}"; do
 done
 
 # 9) SMB dialect negotiation
-log "SMB dialect negotiation"
+log "SMB dialect -m SMB3/2/NT1"
 smbclient -N -L "\\\\$IP\\" -m SMB3 || true
 smbclient -N -L "\\\\$IP\\" -m SMB2 || true
 smbclient -N -L "\\\\$IP\\" -m NT1  || true
 
 # 10) Summary
 log "Done. Review results in: $OUT/"
+
+
+###WIP###
+#log "Password policy (NetExec)"
+#nxc smb "$IP" -u '' -p '' -M gpp_password        || true
+#nxc smb "$IP" -u 'anonymous' -p '' -M gpp_password || true
+#nxc smb "$IP" -u 'guest' -p '' -M gpp_password     || true
+#nxc smb "$IP" -u '' -p '' --pass-pol  || true
+#nxc smb "$IP" -u 'anonymous' -p '' --pass-pol  || true
+#nxc smb "$IP" -u 'guest' -p '' --pass-pol  || true
+#echo
+
+#auth
+# Enumerate recursively (depth 3) and search for "password"
+#nxc smb $IP -u <user> -p <pass> -M spider_plus -o READ_ONLY=true MAX_DEPTH=3 PATTERN=password
+
