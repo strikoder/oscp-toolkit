@@ -3,7 +3,7 @@
 # File: no_auth_smb.sh
 #
 # Purpose:
-#   Automated SMB enumeration with **no authentication** (null / anonymous / guest).
+#   Automated SMB enumeration with **no authentication** (null / anonymous).
 #   Collects information, lists accessible shares, and saves results in a single folder.
 #
 # Usage:
@@ -68,21 +68,36 @@ log "NetExec RID brute (saving ONLY usernames.txt)"
 RID_TMP="$(mktemp)"
 trap 'rm -f "$RID_TMP"' EXIT
 
-
-for USER in "" "anonymous" "guest"; do
+for USER in "" "anonymous"; do
   [[ -z "$USER" ]] && NAME="null" || NAME="$USER"
   log "  nxc smb $IP as '$NAME'"
   nxc smb "$IP" -u "$USER" -p '' --rid-brute >>"$RID_TMP" || true
 done
 awk '{print $6}' "$RID_TMP" | sort -u > "$OUT/usernames.txt"
 
+# 5a) Run selected modules (always with -M)
+MODULES=(gpp_password gpp_autologin smb_ghost printnightmare remove-mic nopac)
 
-# 6) enum4linux-ng (optional)
+for m in "${MODULES[@]}"; do
+  log "Module: $m"
+  nxc smb "$IP" -u '' -p '' -M "$m" || true
+  nxc smb "$IP" -u 'anonymous' -p '' -M "$m" || true
+done
+echo
+
+# 5b) Password policy checks (no-auth variants)
+log "NetExec --pass-pol"
+nxc smb "$IP" -u '' -p '' --pass-pol || true
+nxc smb "$IP" -u 'anonymous' -p '' --pass-pol || true
+echo
+
+
+# 6) enum4linux-ng
 log "enum4linux-ng -A"
 enum4linux-ng -A "$IP" || true
 echo
 
-# 7) smbmap (optional)
+# 7) smbmap
 log "smbmap share perms"
 smbmap -H "$IP" -u ' ' -p ' ' || true
 echo
@@ -99,7 +114,7 @@ for sh in "${ALL_SHARES[@]}"; do
   safe_sh="${sh//\$}"
   target="$OUT/downloads/$safe_sh"
   mkdir -p "$target"
-  for CREDS in "-N" "-U anonymous%" "-U guest%"; do
+  for CREDS in "-N" "-U anonymous%"; do
     log "  //$IP/$sh with $CREDS"
     if smbclient $CREDS "//$IP/$sh" -c "lcd \"$target\"; recurse ON; prompt OFF; mget *"; then
       log "    Pulled to $target"
@@ -108,27 +123,8 @@ for sh in "${ALL_SHARES[@]}"; do
   done
 done
 
-# 9) SMB dialect negotiation
-log "SMB dialect -m SMB3/2/NT1"
-smbclient -N -L "\\\\$IP\\" -m SMB3 || true
-smbclient -N -L "\\\\$IP\\" -m SMB2 || true
-smbclient -N -L "\\\\$IP\\" -m NT1  || true
 
 # 10) Summary
-log "Done. Review results in: $OUT/"
-
-
-###WIP###
-#log "Password policy (NetExec)"
-#nxc smb "$IP" -u '' -p '' -M gpp_password        || true
-#nxc smb "$IP" -u 'anonymous' -p '' -M gpp_password || true
-#nxc smb "$IP" -u 'guest' -p '' -M gpp_password     || true
-#nxc smb "$IP" -u '' -p '' --pass-pol  || true
-#nxc smb "$IP" -u 'anonymous' -p '' --pass-pol  || true
-#nxc smb "$IP" -u 'guest' -p '' --pass-pol  || true
-#echo
-
-#auth
-# Enumerate recursively (depth 3) and search for "password"
-#nxc smb $IP -u <user> -p <pass> -M spider_plus -o READ_ONLY=true MAX_DEPTH=3 PATTERN=password
+echo "Done. Review results in: $OUT/"
+echo "Zerologon (lab only): nxc smb $IP -u '' or anonymous -p '' -M zerologon"
 
