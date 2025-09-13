@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Author: strikoder
-# File: krb88_enum.sh
-# Usage: ./auth_smb.sh -t <DC_IP> -d <DOMAIN>
+# File: noauth_kerberos
+# Usage: ./noauth_kerberos -t <DC_IP> -d <DOMAIN>
 #
 # Purpose:
 #   Authenticated SMB/Kerberos enumeration:
@@ -9,7 +9,7 @@
 #   - AS-REP roasting (Impacket GetNPUsers)
 #
 # Output:
-#   results_kerb/<DOMAIN>_<timestamp>/ with .log results
+#   results_noauth_kerberos/<DOMAIN>_<timestamp>/ with .log results
 #
 # Notes:
 #   - Mode 1: Kerbrute userenum (choose wordlist)
@@ -70,7 +70,7 @@ esac
   echo " "
 
 
-OUTDIR="results_kerb/"
+OUTDIR="results_noauth_kerberos/"
 mkdir -p "$OUTDIR"
 
 if [[ "$MODE" == "1" ]]; then
