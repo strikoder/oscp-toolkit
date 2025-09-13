@@ -75,9 +75,7 @@ OUT_CASCADE="${OUTDIR}/ldap_cascade_pwd.txt"
 echo "==============================================================="
 echo "[*] Running ldapsearch on $URL with $BINDUSER ..."
 echo "==============================================================="
-ldapsearch -LLL -x -H "$URL" -D "$BINDUSER" -w "$PASS" -b "$BASEDN" \
-  "(objectClass=user)" sAMAccountName description info userAccountControl \
-  | tee "$OUT_MAIN"
+ldapsearch -LLL -x -H "$URL" -D "$BINDUSER" -w "$PASS" -b "$BASEDN" "(objectClass=user)" | tee "$OUT_MAIN"
 
 echo "==============================================================="
 echo "[*] Grepping 'info:' with context (-B1 -A2)..."
