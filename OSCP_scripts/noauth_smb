@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# File: no_auth_smb.sh
+# File: noauth_smb
 # Author: strikoder
 #
 # Description:
@@ -26,7 +26,7 @@
 #   10) smbclient recursive download from accessible shares
 #
 # Output:
-#   results_smb_noauth/
+#   results_noauth_smb/
 #     - ldap_usernames.txt    : usernames from RID brute
 #     - downloads/*           : recursively pulled share contents
 #   All command output is shown live in the terminal.
@@ -41,7 +41,7 @@ if [[ $# -ne 1 ]]; then
 fi
 
 IP="$1"
-OUT="results_smb_noauth"
+OUT="results_noauth_smb"
 mkdir -p "$OUT"
 mkdir -p "$OUT/downloads"
 
