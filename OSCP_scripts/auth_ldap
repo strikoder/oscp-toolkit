@@ -94,7 +94,8 @@ awk 'BEGIN{IGNORECASE=1}
      /^$/ { if(u!="" && p!=""){print u ":" p}; u=""; p=""; next }
      /^sAMAccountName:[[:space:]]*/ { sub(/^sAMAccountName:[[:space:]]*/,""); u=$0 }
      /cascadeLegacy/ && /:/ { sub(/^[^:]*:[[:space:]]*/,""); p=$0 }
-     END { if(u!="" && p!=""){print u ":" p} }' "$OUT_MAIN" >"$OUT_CASCADE" || true
+     END { if(u!="" && p!=""){print u ":" p} }' "$OUT_MAIN" \
+| tee "$OUT_CASCADE" || true
 
 
 echo "==============================================================="
