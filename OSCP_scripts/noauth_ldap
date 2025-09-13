@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Author: strikoder
-# File: ldap_noauth_enum.sh
-# Usage: ./ldap_noauth_enum.sh -t <IP> -d <domain> [-ldaps]
+# File: noauth_ldap
+# Usage: ./noauth_ldap -t <IP> -d <domain> [-ldaps]
 
 set -euo pipefail
 
@@ -23,7 +23,7 @@ PROTO=$([[ $USE_LDAPS -eq 1 ]] && echo "ldaps" || echo "ldap")
 echo "[*] Using $PROTO. If you want LDAPS, add -ldaps."
 echo "[*] DC: $IP  |  Domain: $DOMAIN  |  BaseDN: $BASE_DN"
 
-OUTDIR="results_ldap_noauth"
+OUTDIR="results_noauth_ldap"
 mkdir -p "$OUTDIR"
 
 # 1) LDAP dump (no auth)
