@@ -1,7 +1,44 @@
 #!/usr/bin/env bash
-# Author: strikoder
 # File: auth_smb.sh
-# Usage: ./auth_smb.sh -t <IP> -u <USER> -p <PASS> [-d <DOMAIN>]
+# Author: strikoder
+#
+# Description:
+#   Perform authenticated SMB/LDAP enumeration and common NetExec modules.
+#   Supports both local and domain authentication.
+#
+# Usage:
+#   ./auth_smb.sh -t <IP> -u <USER> -p <PASS> [-d <DOMAIN>]
+#
+# Arguments:
+#   -t <IP>      Target host (IP or hostname)
+#   -u <USER>    Username (local user or domain user)
+#   -p <PASS>    Password (quote if it contains special chars)
+#   -d <DOMAIN>  Optional domain name. If given, domain auth is used.
+#
+# Auth modes:
+#   - Domain mode: uses -d <DOMAIN> -u <USER> -p <PASS>
+#   - Local mode:  uses --local-auth -u <USER> -p <PASS>
+#
+# What it does:
+#   1) Runs SMB enumeration with common flags:
+#        --shares, --users, --pass-pol, --loggedon-users, --qwinsta
+#   2) If domain auth is set, runs LDAP enumeration (--groups)
+#   3) Runs DPAPI checks (base, cookies, nosystem). Local-auth variant only in local mode.
+#   4) Runs useful NetExec modules:
+#        - In domain mode: spider_plus, gpp_password, gpp_autologin,
+#          wifi, powershell_history, lsassy, rdcman, backup_operator
+#        - In local mode: sam, lsa, lsass
+#
+# Output:
+#   All command results are printed live to console. No separate log files.
+#
+# Notes:
+#   - Requires `nxc` (NetExec) installed in PATH.
+#   - For domain auth, supply `-d <DOMAIN>`. For local accounts, omit -d.
+#   - Some modules (sam/lsa/lsass/etc.) require local administrator rights.
+#   - Extra manual modules you can run later:
+#       nxc smb <IP> <auth> -M wdigest -o ACTION=enable|disable
+#       nxc smb <IP> <auth> -M zerologon   # (lab use only)
 set -euo pipefail
 
 IP=""; USER=""; PASS=""; DOMAIN=""
