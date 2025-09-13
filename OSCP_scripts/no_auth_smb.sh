@@ -1,19 +1,39 @@
 #!/usr/bin/env bash
-# Author: Strikoder
 # File: no_auth_smb.sh
+# Author: strikoder
 #
-# Purpose:
-#   Automated SMB enumeration with **no authentication** (null / anonymous).
-#   Collects information, lists accessible shares, and saves results in a single folder.
+# Description:
+#   Automated SMB enumeration with no authentication (null / anonymous).
+#   Runs basic recon, checks for misconfigurations, extracts usernames,
+#   and attempts recursive downloads from accessible shares.
 #
 # Usage:
 #   ./no_auth_smb.sh <IP>
 #
-# Output:
-#   ./results_smb_noauth/ containing:
-#     - usernames.txt           : Extracted usernames from RID brute
-#     - downloads/*             : All files pulled recursively from accessible shares
+# Arguments:
+#   <IP>   Target host (IP or hostname)
 #
+# Workflow:
+#   1) NetBIOS discovery with nmblookup
+#   2) SMB version and safe NSE scripts with nmap
+#   3) smbclient (null/anonymous) share listing
+#   4) rpcclient enumeration (srvinfo, lsaquery, enumdomains, users, groups)
+#   5) NetExec RID brute (saves usernames.txt)
+#   6) Run common NetExec modules (gpp_password, gpp_autologin, smb_ghost, printnightmare, remove-mic, nopac)
+#   7) NetExec password policy checks (--pass-pol) with null/anonymous
+#   8) enum4linux-ng full enum (-A)
+#   9) smbmap share permission listing
+#   10) smbclient recursive download from accessible shares
+#
+# Output:
+#   results_smb_noauth/
+#     - ldap_usernames.txt    : usernames from RID brute
+#     - downloads/*           : recursively pulled share contents
+#   All command output is shown live in the terminal.
+#
+# Notes:
+#   - Requires: nmblookup, nmap,
+
 set -euo pipefail
 
 if [[ $# -ne 1 ]]; then
