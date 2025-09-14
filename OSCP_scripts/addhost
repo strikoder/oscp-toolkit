@@ -1,4 +1,3 @@
-
 #!/usr/bin/env bash
 if [[ "$1" == "-h" || "$1" == "--help" ]]; then
   echo "Usage: addhost <IP> <hostname1> [hostname2] [hostname3] ..."
