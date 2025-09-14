@@ -10,3 +10,7 @@
 - rubeus(/usr/share/windows-resources/binaries)
 - [SharpHound.exe](https://github.com/SpecterOps/SharpHound/releases)
 - [PowerSploit](https://github.com/PowerShellMafia/PowerSploit.git)
+- [exploit suggster](https://github.com/Pwnistry/Windows-Exploit-Suggester-python3)
+- [exploit suggester-ng](https://github.com/bitsadmin/wesng)
+#TODO
+add links to potatoes
