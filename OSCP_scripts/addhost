@@ -1,0 +1,22 @@
+
+#!/usr/bin/env bash
+if [[ "$1" == "-h" || "$1" == "--help" ]]; then
+  echo "Usage: addhost <IP> <hostname1> [hostname2] [hostname3] ..."
+  echo "Adds or updates an entry in /etc/hosts"
+  return 0
+fi
+
+if [ $# -lt 2 ]; then
+  echo "Usage: addhost <IP> <hostname1> [hostname2] ..."
+  return 1
+fi
+
+ip="$1"
+shift   # remove IP, keep the hostnames
+
+for host in "$@"; do
+  # delete any existing line ending with this hostname
+  sudo sed -i "/[[:space:]]$host$/d" /etc/hosts
+  echo "$ip $host" | sudo tee -a /etc/hosts > /dev/null
+  echo "Added/Updated: $ip $host"
+done
