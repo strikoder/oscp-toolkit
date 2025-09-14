@@ -9,3 +9,4 @@
 - nc.exe(/usr/share/windows-resources/binaries)
 - rubeus(/usr/share/windows-resources/binaries)
 - [SharpHound.exe](https://github.com/SpecterOps/SharpHound/releases)
+- [PowerSploit](https://github.com/PowerShellMafia/PowerSploit.git)
