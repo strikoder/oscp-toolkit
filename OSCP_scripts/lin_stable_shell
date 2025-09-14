@@ -1,0 +1,9 @@
+#!/bin/bash
+cat << EOF
+python3 -c 'import pty; pty.spawn("/bin/bash")'
+export TERM=xterm-256color
+ctrl+z
+stty raw -echo ; fg ; reset
+stty columns 200 rows 200
+alias ls='ls -lah --color=auto'
+EOF
