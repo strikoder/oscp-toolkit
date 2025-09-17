@@ -21,9 +21,15 @@ $dangerous_functions = array(
     'preg_replace','mb_ereg_replace','FFI'
 );
 
-foreach ($dangerous_functions as $function) {
-    if (function_exists($function)) {
+foreach ($dangerous_functions as $function) 
+{
+    if (function_exists($function)) 
+    {
         echo $function . " is enabled\n";
+    }
+    else 
+    {
+        echo $function . " is disabled!\n";
     }
 }
 ?>
