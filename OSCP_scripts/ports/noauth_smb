@@ -56,7 +56,7 @@ echo
 
 # 2) SMB version & safe NSE
 log "nmap safe SMB scripts"
-nmap -Pn -p445 -sV --script "smb-protocols,smb2-time,smb2-security-mode,smb2-capabilities" "$IP" || true
+nmap -Pn -p445 -sV --script "smb-protocols,smb2-time,smb2-security-mode,smb2-capabilities,smb-vuln-ms17-010" "$IP" || true
 echo
 
 # 3) smbclient null session share list
