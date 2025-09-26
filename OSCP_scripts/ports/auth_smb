@@ -66,6 +66,11 @@ else
 fi
 log "Auth mode: $MODE"
 
+## 0) NMAP
+log "nmap safe SMB scripts"
+nmap -Pn -p445 -sV --script "smb-protocols,smb2-time,smb2-security-mode,smb2-capabilities" "$IP" || true
+echo
+
 
 ## 1) SMB recon (per-flag, clear output)
 FLAGS=(--shares --users --pass-pol --loggedon-users --qwinsta)
