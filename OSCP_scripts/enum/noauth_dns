@@ -3,21 +3,15 @@
 # Author: strikoder
 #
 # Description:
-#   Quick DNS/AD enumeration using `dig`.
-#   Performs common record lookups, zone transfer attempts, reverse lookup,
-#   and optional subdomain brute-forcing with a wordlist.
+#   Enhanced DNS enumeration script that works with or without a known domain.
 #
 # Usage:
-#   ./dns_enum.sh <DNS_SERVER_IP> <DOMAIN> [subdomain_wordlist.txt]
-#
-# Arguments:
-#   <DNS_SERVER_IP>        Target DNS server IP
-#   <DOMAIN>               Domain to query (e.g. thm.local)
-#   [wordlist.txt]         Optional file containing subdomains (one per line) for brute force
+#   ./noauth_dns <DNS_SERVER_IP> [DOMAIN] [subdomain_wordlist.txt]
 #
 # Examples:
-#   ./dns_enum.sh 10.10.16.40 thm.local
-#   ./dns_enum.sh 10.10.16.40 thm.local subdomains.txt
+#   ./noauth_dns 10.10.16.40
+#   ./noauth_dns 10.10.16.40 htb.local
+#   ./noauth_dns 10.10.16.40 htb.local subdomains.txt
 #
 # What it does:
 #   1) SOA and NS queries (authority, nameservers)
@@ -32,11 +26,7 @@
 # Output:
 #   Results are printed directly to console.
 #   If a wordlist is supplied, discovered subdomains with resolved IPs are shown.
-#
-# Notes:
-#   - Requires `dig` (from dnsutils/bind-utils).
-#   - Works against AD DNS or general DNS servers.
-#   - Zone transfer is often blocked; failures are expected.
+
 
 set -euo pipefail
 
@@ -44,10 +34,7 @@ DNS_SERVER="${1:-}"
 DOMAIN="${2:-}"
 WORDLIST="${3:-}"
 
-if ! command -v dig >/dev/null 2>&1; then
-  echo "[!] 'dig' not found. Install bind-utils / dnsutils." >&2
-  exit 1
-fi
+
 if [[ -z "$DNS_SERVER" || -z "$DOMAIN" ]]; then
   echo "Usage: $0 <DNS_SERVER_IP> <DOMAIN> [subdomain_wordlist.txt]" >&2
   exit 1
