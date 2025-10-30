@@ -66,6 +66,9 @@ OUT_MAIN="${OUTDIR}/ldap.txt"
 OUT_INFO="${OUTDIR}/ldap_info_ctx.txt"
 OUT_PWDNR="${OUTDIR}/ldap_pwdnotreqd.txt"
 OUT_CASCADE="${OUTDIR}/ldap_cascade_pwd.txt"
+NXC_OUT="${OUTDIR}/ldap_nxc_users.txt"
+NXC_USERS="${OUTDIR}/usernames.txt"
+NXC_USERS_DESC="${OUTDIR}/users_with_descriptions.txt"
 
 echo "==============================================================="
 echo "[*] Running ldapsearch on $URL ..."
@@ -95,8 +98,42 @@ awk 'BEGIN{IGNORECASE=1}
 
 
 echo "==============================================================="
+echo "[*] Running NetExec LDAP null/guest --users (if allowed)"
+echo "==============================================================="
+
+
+for USER in "" "guest"; do
+  echo "[*] Running: nxc ldap ${IP} -u \"${USER}\" -p \"\" --users"
+
+  CMD=(nxc ldap "${IP}" -u "${USER}" -p "" --users)
+  OUTPUT="$("${CMD[@]}" 2>/dev/null || true)"
+
+  if echo "${OUTPUT}" | grep -q -- '-Username-'; then
+    echo "${OUTPUT}" | tee -a "${NXC_OUT}"
+
+    echo "${OUTPUT}" \
+    | awk '
+      $5 == "-Username-" { in_table=1; next }
+      in_table && NF >= 6 {
+        username = $5
+        description = ""
+
+        if (NF > 9) {
+          for (i = 10; i <= NF; i++) {
+            description = description $i " "
+          }
+          gsub(/[ \t]+$/, "", description)
+          print username " | " description >> "'"${NXC_USERS_DESC}"'"
+          print username >> "'"${NXC_USERS}"'"
+        } else {
+          print username >> "'"${NXC_USERS}"'"
+        }
+      }'
+  else
+    echo "[-] No output or access denied for user '${USER}'" | tee -a "${NXC_OUT}"
+  fi
+done
+
+echo "==============================================================="
 echo "[*] Done. Results saved in $OUTDIR/"
 echo "==============================================================="
-echo "    - Full dump: $OUT_MAIN"
-echo "    - Info ctx:  $OUT_INFO"
-echo "    - UAC=...32: $OUT_PWDNR"
