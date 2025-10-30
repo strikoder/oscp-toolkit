@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Author: strikoder
 # File: noauth_kerberos
-# Usage: ./noauth_kerberos -t <DC_IP> -d <DOMAIN>
+# Usage: ./noauth_kerberos <DC_IP> <DOMAIN>
 #
 # Purpose:
 #   Authenticated SMB/Kerberos enumeration:
