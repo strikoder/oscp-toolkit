@@ -34,25 +34,15 @@ DNS_SERVER="${1:-}"
 DOMAIN="${2:-}"
 WORDLIST="${3:-}"
 
-if [[ -z "${DNS_SERVER}" ]]; then
-  echo "Usage: $0 <DNS_SERVER_IP> [DOMAIN] [subdomain_wordlist.txt]" >&2
+if [[ -z "${DNS_SERVER}" || -z "${DOMAIN}" ]]; then
+  echo "Usage: $0 <DNS_SERVER_IP> <DOMAIN> [subdomain_wordlist.txt]" >&2
   exit 1
 fi
 
-# Setup log file and temp storage
 SAFE_IP="$(echo "${DNS_SERVER}" | tr '.' '_')"
 OUTPUT_FILE="noauth_dns_${SAFE_IP}.log"
 > "${OUTPUT_FILE}"
 
-TMP_DIR="$(mktemp -d)"
-FOUND_SUBS="${TMP_DIR}/subdomains.txt"
-FOUND_SRV="${TMP_DIR}/srv.txt"
-FOUND_AXFR="${TMP_DIR}/axfr.txt"
-FOUND_PTR="${TMP_DIR}/ptr.txt"
-FOUND_NSEC="${TMP_DIR}/nsec.txt"
-> "${FOUND_SUBS}" "${FOUND_SRV}" "${FOUND_AXFR}" "${FOUND_PTR}" "${FOUND_NSEC}"
-
-# Logging function
 log() {
   echo "$1" | tee -a "${OUTPUT_FILE}"
 }
@@ -62,158 +52,82 @@ divider() {
   log "===== $1 ====="
 }
 
-# Autodetect domain via SOA if not given
-if [[ -z "${DOMAIN}" ]]; then
-  DOMAIN="$(dig @"${DNS_SERVER}" -t SOA +short | awk '{print $1}' | sed 's/\.$//')"
-  if [[ -z "${DOMAIN}" ]]; then
-    log "[!] Could not autodetect domain. Please provide it."
-    exit 1
-  else
-    log "[*] Autodetected domain: ${DOMAIN}"
-  fi
-fi
-
-# Query helper
 q() {
   local type="$1"
-  local name="${2:-${DOMAIN}}"
+  local name="${2:-$DOMAIN}"
   log "\$ dig @${DNS_SERVER} ${name} ${type} +noall +answer"
   dig @"${DNS_SERVER}" "${name}" "${type}" +noall +answer | tee -a "${OUTPUT_FILE}" || true
 }
 
-divider "DNS ENUMERATION on ${DOMAIN} via ${DNS_SERVER}"
+# 0) Banner
+divider "DNS ENUM on ${DOMAIN} via ${DNS_SERVER}"
 
-# SOA and NS
+# 1) SOA and NS
 divider "SOA (Start of Authority)"
 q SOA
 divider "NS (Authoritative Nameservers)"
 q NS
 
-# ANY query
-divider "ANY Record (may be restricted)"
+# 2) ANY
+divider "ANY (may be restricted on hardened servers)"
 q ANY
 
-# Core record types
-for type in A AAAA CNAME MX TXT; do
-  divider "${type} Records"
-  q "${type}"
-done
+# 3) Core record types
+divider "A (IPv4)"
+q A
+divider "AAAA (IPv6)"
+q AAAA
+divider "CNAME (Aliases)"
+q CNAME
+divider "MX (Mail Exchangers)"
+q MX
+divider "TXT (SPF/DMARC/Notes)"
+q TXT
 
-# AD SRV records
-divider "SRV Records (Active Directory)"
-for srv in "_ldap._tcp" "_kerberos._tcp" "_kpasswd._tcp" "_ldap._tcp.dc._msdcs"; do
-  full_name="${srv}.${DOMAIN}"
-  log "\$ dig @${DNS_SERVER} ${full_name} SRV +noall +answer"
-  result="$(dig @"${DNS_SERVER}" "${full_name}" SRV +noall +answer)"
-  if [[ -n "${result}" ]]; then
-    echo "${result}" | tee -a "${OUTPUT_FILE}" | tee -a "${FOUND_SRV}"
-  else
-    log "[!] No SRV response for ${full_name}"
-  fi
-done
+# 4) AD SRV records
+divider "SRV Records (common AD services if applicable)"
+q SRV "_ldap._tcp.${DOMAIN}"
+q SRV "_kerberos._tcp.${DOMAIN}"
+q SRV "_kpasswd._tcp.${DOMAIN}"
+q SRV "_ldap._tcp.dc._msdcs.${DOMAIN}"
 
-# AXFR zone transfer attempt
+# 5) Zone transfer
 divider "AXFR (Zone Transfer Attempt)"
 log "\$ dig AXFR ${DOMAIN} @${DNS_SERVER}"
-AXFR_RESULT="$(dig AXFR "${DOMAIN}" @"${DNS_SERVER}" +nocookie +nsid +noall +answer)"
-if [[ -n "${AXFR_RESULT}" ]]; then
-  echo "${AXFR_RESULT}" | tee -a "${OUTPUT_FILE}" | tee -a "${FOUND_AXFR}"
-else
-  log "[!] AXFR failed or not allowed."
-fi
+dig AXFR "${DOMAIN}" @"${DNS_SERVER}" +nocookie +nsid | tee -a "${OUTPUT_FILE}" || log "[!] AXFR failed or not allowed."
 
-# Reverse PTR lookup
-divider "Reverse PTR Lookup of DNS Server"
-REV_ARPA="$(echo "${DNS_SERVER}" | awk -F. '{print $4"."$3"."$2"."$1".in-addr.arpa"}')"
+# 6) Reverse PTR
+divider "Reverse (PTR) of DNS server"
+REV_ARPA="$(printf "%s" "${DNS_SERVER}" | awk -F. '{print $4"."$3"."$2"."$1".in-addr.arpa"}')"
 log "\$ dig -x ${DNS_SERVER} @${DNS_SERVER} +noall +answer"
-PTR_RESULT="$(dig -x "${DNS_SERVER}" @"${DNS_SERVER}" +noall +answer)"
-if [[ -n "${PTR_RESULT}" ]]; then
-  echo "${PTR_RESULT}" | tee -a "${OUTPUT_FILE}" | tee -a "${FOUND_PTR}"
-else
-  log "[!] PTR lookup failed."
-fi
+dig -x "${DNS_SERVER}" @"${DNS_SERVER}" +noall +answer | tee -a "${OUTPUT_FILE}" || true
 
-# Subdomain brute-force
-if [[ -n "${WORDLIST}" && -r "${WORDLIST}" ]]; then
-  divider "Subdomain Brute-force (Wordlist: ${WORDLIST})"
-  while IFS= read -r sub || [[ -n "${sub}" ]]; do
-    [[ -z "${sub}" || "${sub}" =~ ^# ]] && continue
-    fqdn="${sub}.${DOMAIN}"
-    resolved="$(dig @"${DNS_SERVER}" "${fqdn}" A AAAA +short)"
-    if [[ -n "${resolved}" ]]; then
-      while IFS= read -r ip; do
-        log "${fqdn} -> ${ip}"
-        echo "${fqdn} -> ${ip}" >> "${FOUND_SUBS}"
-      done <<< "${resolved}"
-    fi
+# 7) Brute subdomains
+if [[ -n "${WORDLIST:-}" && -r "${WORDLIST}" ]]; then
+  divider "Subdomain Brute (wordlist: ${WORDLIST})"
+  while IFS= read -r sub || [[ -n "$sub" ]]; do
+    [[ -z "$sub" || "$sub" =~ ^# ]] && continue
+    for TYPE in A AAAA; do
+      dig @"${DNS_SERVER}" "${sub}.${DOMAIN}" "${TYPE}" +short \
+        | awk -v s="${sub}" -v d="${DOMAIN}" '{print s "." d " -> " $0}' \
+        | tee -a "${OUTPUT_FILE}"
+    done
   done < <(sed 's/\r$//' "${WORDLIST}")
 fi
 
-# DNSSEC / NSEC zone walking test
-divider "NSEC (DNSSEC Zone Walking)"
-log "\$ dig @${DNS_SERVER} ${DOMAIN} NSEC +dnssec +noall +answer"
-NSEC_RESULT="$(dig @"${DNS_SERVER}" "${DOMAIN}" NSEC +dnssec +noall +answer)"
-if [[ -n "${NSEC_RESULT}" ]]; then
-  echo "${NSEC_RESULT}" | tee -a "${OUTPUT_FILE}" | tee -a "${FOUND_NSEC}"
-else
-  log "[!] NSEC not supported or DNSSEC disabled."
-fi
-
-# Final Summary
-divider "Summary of Findings"
-
-log "[*] NS Records:"
+# 8) Summary
+divider "Summary (quick hits)"
+log "[+] NS:"
 dig @"${DNS_SERVER}" "${DOMAIN}" NS +short | tee -a "${OUTPUT_FILE}" || true
 
-log "[*] MX Records:"
+log "[+] MX:"
 dig @"${DNS_SERVER}" "${DOMAIN}" MX +short | tee -a "${OUTPUT_FILE}" || true
 
-log "[*] TXT Records:"
+log "[+] TXT:"
 dig @"${DNS_SERVER}" "${DOMAIN}" TXT +short | tee -a "${OUTPUT_FILE}" || true
 
-log "[*] A Records:"
+log "[+] A (root):"
 dig @"${DNS_SERVER}" "${DOMAIN}" A +short | tee -a "${OUTPUT_FILE}" || true
 
 log ""
-
-if [[ -s "${FOUND_SRV}" ]]; then
-  log "[+] Active Directory SRV Records:"
-  cat "${FOUND_SRV}" | tee -a "${OUTPUT_FILE}"
-else
-  log "[!] No SRV records found."
-fi
-
-if [[ -s "${FOUND_AXFR}" ]]; then
-  log "[+] Zone Transfer (AXFR) successful:"
-  head -n 10 "${FOUND_AXFR}" | tee -a "${OUTPUT_FILE}"
-  log "[...] Full AXFR shown above."
-else
-  log "[!] AXFR failed or not allowed."
-fi
-
-if [[ -s "${FOUND_PTR}" ]]; then
-  log "[+] Reverse PTR result:"
-  cat "${FOUND_PTR}" | tee -a "${OUTPUT_FILE}"
-else
-  log "[!] No PTR response."
-fi
-
-if [[ -s "${FOUND_SUBS}" ]]; then
-  log "[+] Discovered Subdomains:"
-  cat "${FOUND_SUBS}" | tee -a "${OUTPUT_FILE}"
-else
-  log "[!] No subdomains found (or none resolved)."
-fi
-
-if [[ -s "${FOUND_NSEC}" ]]; then
-  log "[+] NSEC records found — DNSSEC likely enabled."
-  cat "${FOUND_NSEC}" | tee -a "${OUTPUT_FILE}"
-else
-  log "[!] No NSEC records found."
-fi
-
-log ""
 log "[✓] DNS enumeration complete. Results saved to: ${OUTPUT_FILE}"
-
-echo
-echo "[✓] Done."
