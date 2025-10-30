@@ -101,7 +101,6 @@ echo "==============================================================="
 echo "[*] Running NetExec LDAP null/guest --users (if allowed)"
 echo "==============================================================="
 
-
 for USER in "" "guest"; do
   echo "[*] Running: nxc ldap ${IP} -u \"${USER}\" -p \"\" --users"
 
