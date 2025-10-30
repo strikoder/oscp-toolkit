@@ -141,8 +141,6 @@ cat <<'EOT'
 - Domain mode is used when -d <DOMAIN> is provided; otherwise the script uses --local-auth.
 - LDAP --groups runs only in domain mode.
 - Extra modules you can run manually if needed:
-    * Laps (-M laps with smb might not work, so use ldap)
-        nxc ldap $IP -u $user -p $pass -M laps
     * WDigest (enable cleartext creds in LSASS):
         nxc smb <IP> <auth> -M wdigest -o ACTION=enable
       Cleanup afterwards (IRL):
