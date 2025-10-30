@@ -110,3 +110,4 @@ echo "==============================================================="
 echo "    - Full dump: $OUT_MAIN"
 echo "    - Info ctx:  $OUT_INFO"
 echo "    - UAC=...32: $OUT_PWDNR"
+echo "    - For full results check: $OUTDIR/
