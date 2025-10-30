@@ -19,15 +19,13 @@
 
 set -euo pipefail
 
-IP=""; DOMAIN=""
-while [[ $# -gt 0 ]]; do
-  case "$1" in
-    -t) IP="$2"; shift 2 ;;
-    -d) DOMAIN="$2"; shift 2 ;;
-    *) echo "Usage: $0 -t <DC_IP> -d <DOMAIN>"; exit 1 ;;
-  esac
-done
-[[ -z "$IP" || -z "$DOMAIN" ]] && { echo "Missing -t/-d"; exit 1; }
+IP="${1:-}"
+DOMAIN="${2:-}"
+
+if [[ -z "${IP}" || -z "${DOMAIN}" ]]; then
+  echo "Usage: $0 <DC_IP> <DOMAIN>"
+  exit 1
+fi
 
 log(){ echo -e "\n[*] $*\n"; }
 need(){ command -v "$1" >/dev/null || { echo "[-] Missing tool: $1"; exit 1; }; }
