@@ -39,7 +39,7 @@ if [[ $# -ne 1 ]]; then
 fi
 
 IP="$1"
-OUT="results_noauth_smb"
+OUT_DIR="results_noauth_smb"
 DOWNLOAD_DIR="${OUT_DIR}/downloads"
 USERNAMES_FILE="${OUT_DIR}/usernames.txt"
 RID_TMP="$(mktemp)"
