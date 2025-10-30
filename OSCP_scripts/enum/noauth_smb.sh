@@ -94,7 +94,7 @@ log "Saved usernames to ${USERNAMES_FILE}"
 echo
 
 # 5a) Run selected modules (always with -M)
-MODULES=(gpp_password gpp_autologin smb_ghost printnightmare remove-mic nopac)
+MODULES=(gpp_password gpp_autologin smbghost printnightmare remove-mic nopac)
 
 for MODULE in "${MODULES[@]}"; do
   log "Running NetExec module: ${MODULE}"
