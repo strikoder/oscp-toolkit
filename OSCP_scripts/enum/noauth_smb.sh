@@ -1,140 +1,191 @@
 #!/usr/bin/env bash
-# File: noauth_smb
+#
+# noauth_smb.sh - Comprehensive Unauthenticated SMB Enumeration
 # Author: strikoder
 #
 # Description:
-#   Automated SMB enumeration with no authentication (null / anonymous).
-#   Runs basic recon, checks for misconfigurations, extracts usernames,
-#   and attempts recursive downloads from accessible shares.
+#   Performs comprehensive SMB enumeration without credentials.
+#   Saves critical data to files while displaying all output live.
 #
-# Usage:
-#   ./no_auth_smb.sh <IP>
-#
-# Workflow:
-#   1) NetBIOS discovery with nmblookup
-#   2) SMB version and safe NSE scripts with nmap
-#   3) smbclient (null/anonymous) share listing
-#   4) rpcclient enumeration (srvinfo, lsaquery, enumdomains, users, groups)
-#   5) NetExec RID brute (saves usernames.txt)
-#   6) Run common NetExec modules (gpp_password, gpp_autologin, smb_ghost, printnightmare, remove-mic, nopac)
-#   7) NetExec password policy checks (--pass-pol) with null/anonymous
-#   8) enum4linux-ng full enum (-A)
-#   9) smbmap share permission listing
-#   10) smbclient recursive download from accessible shares
-#
-# Output:
-#   results_noauth_smb/
-#     - ldap_usernames.txt    : usernames from RID brute
-#     - downloads/*           : recursively pulled share contents
-#   All command output is shown live in the terminal.
-#
-# Notes:
-#   - Requires: nmblookup, nmap,
+# Usage: ./noauth_smb.sh <IP>
 
 set -euo pipefail
 
+# Color definitions
+readonly RED='\033[0;31m'
+readonly GREEN='\033[0;32m'
+readonly YELLOW='\033[1;33m'
+readonly BLUE='\033[0;34m'
+readonly CYAN='\033[0;36m'
+readonly NC='\033[0m' # No Color
+
+# Configuration
+readonly SCRIPT_NAME="$(basename "$0")"
+readonly TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
+
+# Validate arguments
 if [[ $# -ne 1 ]]; then
-  echo "Usage: $0 <IP>"
-  exit 1
+    echo -e "${RED}[!] Usage: ${SCRIPT_NAME} <IP>${NC}" >&2
+    exit 1
 fi
 
-IP="$1"
-OUT_DIR="results_noauth_smb"
-DOWNLOAD_DIR="${OUT_DIR}/downloads"
-USERNAMES_FILE="${OUT_DIR}/usernames.txt"
-RID_TMP="$(mktemp)"
-trap 'rm -f "$RID_TMP"' EXIT
+readonly TARGET_IP="$1"
+readonly OUT_DIR="results_noauth_smb/${TARGET_IP}_${TIMESTAMP}"
+readonly DOWNLOAD_DIR="${OUT_DIR}/downloads"
 
+# Create output directories
 mkdir -p "${OUT_DIR}" "${DOWNLOAD_DIR}"
 
-log() { echo -e "[*] $*"; }
+# Output files
+readonly USERNAMES_FILE="${OUT_DIR}/usernames.txt"
+readonly USERNAMES_DESC_FILE="${OUT_DIR}/usernames_description.txt"
+readonly RPC_LOG="${OUT_DIR}/rpcclient.log"
+readonly NXC_RID_LOG="${OUT_DIR}/nxc_rid_brute.log"
+readonly NXC_USERS_LOG="${OUT_DIR}/nxc_users.log"
+readonly SMBCLIENT_LOG="${OUT_DIR}/smbclient_shares.log"
+readonly NXC_MODULES_LOG="${OUT_DIR}/nxc_modules.log"
+readonly NXC_PASSPOL_LOG="${OUT_DIR}/nxc_passpol.log"
 
-log "Output directory: ${OUT_DIR}"
+log_warning() {
+    echo -e "${YELLOW}[!] $*${NC}"
+}
 
-# 1) NetBIOS names
-log "Running NetBIOS discovery (nmblookup)"
-nmblookup -A "${IP}" || true
-echo
+log_error() {
+    echo -e "${RED}[-] $*${NC}" >&2
+}
 
-# 2) SMB version & safe NSE
-log "nmap safe SMB scripts"
-nmap -Pn -p445 -sV --script "smb-protocols,smb2-capabilities,smb-vuln-ms17-010" "$IP" || true
-echo
-
-# 3) smbclient null session share list
-log "Listing shares with smbclient -L (null session)"
-SHARE_ENUM="$(smbclient -N -L "\\\\${IP}\\" 2>/dev/null || true)"
-echo "${SHARE_ENUM}"
-echo
-
-# 4) rpcclient null session basics
-log "rpcclient basics"
-{
-  echo "srvinfo"
-  echo "lsaquery"
-  echo "enumdomains"
-  echo "querydominfo"
-  echo "enumdomusers"
-  echo "enumdomgroups"
-} | rpcclient -U "" -N "$IP" || true
-echo
-
-# 5) NetExec RID brute
-log "Running RID brute with NetExec (saving usernames)"
-for USER in "" "anonymous"; do
-  CREDS_LABEL="null"
-  [[ -n "$USER" ]] && CREDS_LABEL="$USER"
-  log "  NetExec RID brute as '${CREDS_LABEL}'"
-  nxc smb "${IP}" -u "${USER}" -p '' --rid-brute >> "${RID_TMP}" || true
-done
-
-awk '{print $6}' "${RID_TMP}" | grep -vE '^\s*$' | sort -u > "${USERNAMES_FILE}"
-
-log "Saved usernames to ${USERNAMES_FILE}"
-echo
-
-# 5a) Run selected modules (always with -M)
-MODULES=(gpp_password gpp_autologin smbghost printnightmare remove-mic nopac)
-
-for MODULE in "${MODULES[@]}"; do
-  log "Running NetExec module: ${MODULE}"
-  nxc smb "${IP}" -u '' -p '' -M "${MODULE}" || true
-  nxc smb "${IP}" -u 'anonymous' -p '' -M "${MODULE}" || true
-done
-echo
-
-# 5b) Password policy checks (no-auth variants)
-log "Checking SMB password policy with NetExec"
-nxc smb "${IP}" -u '' -p '' --pass-pol || true
-nxc smb "${IP}" -u 'anonymous' -p '' --pass-pol || true
-echo
+section_header() {
+    local title="$1"
+    local width=60
+    local padding=$(( (width - ${#title} - 2) / 2 ))
+    echo
+    echo -e "${CYAN}$(printf '=%.0s' $(seq 1 $width))${NC}"
+    echo -e "${CYAN}$(printf ' %.0s' $(seq 1 $padding))${title}${NC}"
+    echo -e "${CYAN}$(printf '=%.0s' $(seq 1 $width))${NC}"
+    echo
+}
 
 
-# 6) enum4linux-ng
-log "Running enum4linux-ng -A"
-enum4linux-ng -A "${IP}" || true
-echo
+# Main enumeration functions
+enum_nmap() {
+    section_header "NMAP SMB SCRIPTS"
+    nmap -Pn -p445 -sV \
+        --script "smb-protocols,smb2-capabilities,smb-security-mode,smb-os-discovery,smb-vuln-ms17-010" \
+        "${TARGET_IP}" 2>&1 || log_warning "Nmap scan failed"
+}
 
-# 7) smbmap
-log "Checking share permissions with smbmap"
-smbmap -H "${IP}" -u ' ' -p ' ' || true
-echo
+enum_smbclient_shares() {
+    section_header "SMBCLIENT - NULL SESSION"
+    smbclient -N -L "\\\\${TARGET_IP}\\" 2>&1 | tee "${SMBCLIENT_LOG}" || log_warning "Null session access denied or failed"
+}
 
-# 8) Full pulls via smbclient
-log "Downloading everything possible via smbclient to: $OUT/downloads"
-if [[ ${#ALL_SHARES[@]} -eq 0 ]]; then
-  readarray -t ALL_SHARES < <(smbclient -N -L "\\\\$IP\\" \
-    | awk '/\s+Disk\s/ {print $1}' | sort -u)
-fi
+enum_nxc_rid_brute() {
+    section_header "NETEXEC - RID BRUTE FORCE"
+    nxc smb "${TARGET_IP}" -u "" -p "" --rid-brute 2>&1 | tee "${NXC_RID_LOG}" || log_warning "RID brute enumeration failed"
+}
 
-# 9) Summary
-echo
-log "Finished SMB enumeration on ${IP}"
-log "Summary:"
-[[ -f "${USERNAMES_FILE}" ]] && log "  - Usernames: ${USERNAMES_FILE}"
-[[ -d "${DOWNLOAD_DIR}" ]] && log "  - Downloads: ${DOWNLOAD_DIR}"
-log "  - Manual exploit (lab only):"
-log "      nxc smb ${IP} -u '' -p '' -M zerologon"
-log "      nxc smb ${IP} -u anonymous -p '' -M zerologon"
-log " ### Re-download accessible shares later with: ###"
-log "for s in ${ALL_SHARES[*]}; do d=\${s//\\\$}; mkdir -p \"downloads/\$d\"; smbclient -N \"//${IP}/\$s\" -c \"lcd downloads/\$d; recurse ON; prompt OFF; mget *\"; done"
+enum_nxc_users() {
+    section_header "NETEXEC - USER ENUMERATION"
+    nxc smb "${TARGET_IP}" -u "" -p "" --users 2>&1 | tee "${NXC_USERS_LOG}" || log_warning "User enumeration failed"
+}
+
+enum_rpcclient() {
+    section_header "RPCCLIENT - MSRPC ENUMERATION"
+    {
+        echo "srvinfo"
+        echo "lsaquery"
+        echo "enumdomains"
+        echo "querydominfo"
+        echo "enumdomusers"
+        echo "enumdomgroups"
+        echo "querydispinfo"
+    } | rpcclient -U "" -N "${TARGET_IP}" 2>&1 | tee "${RPC_LOG}" || log_warning "rpcclient failed"
+}
+
+enum_nxc_modules() {
+    section_header "NETEXEC - VULNERABILITY MODULES"
+    local modules=(gpp_password gpp_autologin smbghost printnightmare coerce_plus nopac)
+    
+    for module in "${modules[@]}"; do
+        echo -e "\n${YELLOW}[>] Module: ${module}${NC}"
+        {
+            nxc smb "${TARGET_IP}" -u '' -p '' -M "${module}" 2>&1
+            nxc smb "${TARGET_IP}" -u 'anonymous' -p '' -M "${module}" 2>&1
+        } | tee -a "${NXC_MODULES_LOG}" || true
+    done
+}
+
+enum_password_policy() {
+    section_header "PASSWORD POLICY"
+    {
+        nxc smb "${TARGET_IP}" -u '' -p '' --pass-pol 2>&1
+        nxc smb "${TARGET_IP}" -u 'anonymous' -p '' --pass-pol 2>&1
+    } | tee "${NXC_PASSPOL_LOG}" || log_warning "Password policy enumeration failed"
+}
+
+enum_enum4linux() {
+    section_header "ENUM4LINUX-NG"
+    enum4linux-ng -A "${TARGET_IP}" 2>&1 || log_warning "enum4linux-ng failed"
+}
+
+enum_smbmap() {
+    section_header "SMBMAP - SHARE PERMISSIONS"
+    smbmap -H "${TARGET_IP}" -u '' 2>&1 || log_warning "smbmap with null session failed"
+    echo
+    smbmap -H "${TARGET_IP}" -u 'anonymous' -p '' 2>&1 || log_warning "smbmap with anonymous failed"
+}
+
+prompt_download_shares() {
+	## WIP
+}
+
+print_summary() {
+    section_header "ENUMERATION SUMMARY"
+    
+    echo
+    echo "Results saved to: ${OUT_DIR}/"
+    echo
+    echo -e "${YELLOW}[!] ZEROLOGON (CVE-2020-1472) - Run manually if needed:${NC}"
+    echo -e "    ${CYAN}nxc smb ${TARGET_IP} -u '' -p '' -M zerologon${NC}"
+    echo
+    echo -e "${YELLOW}[!] If you have credentials, consider:${NC}"
+    echo -e "    ${CYAN}nxc smb ${TARGET_IP} -u <user> -p <pass> --shares${NC}"
+    echo -e "    ${CYAN}nxc smb ${TARGET_IP} -u <user> -p <pass> --sam${NC}"
+    echo -e "    ${CYAN}nxc smb ${TARGET_IP} -u <user> -p <pass> --lsa${NC}"
+    echo -e "    ${CYAN}nxc smb ${TARGET_IP} -u <user> -p <pass> -M spider_plus${NC}"
+    echo
+}
+
+# Main execution
+main() {
+    clear
+    echo -e "${CYAN}"
+    cat << "EOF"
+╔═══════════════════════════════════════════════════════════╗
+║                                                           ║
+║        Unauthenticated SMB Enumeration Script             ║
+║                   by strikoder                            ║
+║                                                           ║
+╚═══════════════════════════════════════════════════════════╝
+EOF
+    echo -e "${NC}"
+    
+    echo "Target: ${TARGET_IP}"
+    echo "Output Directory: ${OUT_DIR}"
+    echo
+    
+    # Run enumeration
+    enum_nmap
+    enum_smbclient_shares
+    enum_nxc_rid_brute
+    enum_nxc_users
+    enum_rpcclient
+    enum_nxc_modules
+    enum_password_policy
+    enum_enum4linux
+    enum_smbmap
+    # Summary
+    print_summary
+}
+# Run main function
+main
