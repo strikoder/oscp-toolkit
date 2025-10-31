@@ -1,2 +1,0 @@
-- [Linpeas](https://github.com/peass-ng/PEASS-ng/releases)
-- [ligolo-ng](https://github.com/nicocha30/ligolo-ng/releases)
