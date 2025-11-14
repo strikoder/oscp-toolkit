@@ -31,7 +31,7 @@ echo ""
 
 # VHost fuzzing
 echo "#vhost:"
-echo "ffuf -H \"Host: FUZZ.onlyrands.com\" -H \"User-Agent: PENTEST\" -c -w \"/usr/share/seclists/Discovery/DNS/subdomains-top1million-110000.txt\" -u http://onlyrands.com"
+echo "ffuf -H \"Host: FUZZ.website.com\" -H \"User-Agent: PENTEST\" -c -w \"/usr/share/seclists/Discovery/DNS/subdomains-top1million-110000.txt\" -u http://website.com"
 echo ""
 
 # DNS fuzzing placeholder
