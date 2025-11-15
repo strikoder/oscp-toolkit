@@ -98,10 +98,11 @@ awk 'BEGIN{IGNORECASE=1}
 | tee "$OUT_CASCADE" || true
 
 echo "==============================================================="
-echo "[*] Command: nxc ldap ${IP} -u '${USER}' -p '${PASS}' -d '${DOMAIN}' -M laps"
+echo "[*] Command: nxc ldap ${IP} -u '${USER}' -p '${PASS}' -d '${DOMAIN}' -M laps & -M adcs"
 echo "==============================================================="
 
 nxc ldap "${IP}" -u "${USER}" -p "${PASS}" -d "${DOMAIN}" -M laps  2>/dev/null 
+nxc ldap "${IP}" -u "${USER}" -p "${PASS}" -d "${DOMAIN}" -M adcs  2>/dev/null 
 
 
 echo "==============================================================="
