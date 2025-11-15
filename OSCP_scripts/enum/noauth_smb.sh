@@ -37,14 +37,13 @@ readonly DOWNLOAD_DIR="${OUT_DIR}/downloads"
 mkdir -p "${OUT_DIR}" "${DOWNLOAD_DIR}"
 
 # Output files
-readonly USERNAMES_FILE="${OUT_DIR}/usernames.txt"
-readonly USERNAMES_DESC_FILE="${OUT_DIR}/usernames_description.txt"
-readonly RPC_LOG="${OUT_DIR}/rpcclient.log"
+readonly SMBCLIENT_LOG="${OUT_DIR}/smbclient_shares.log"
 readonly NXC_RID_LOG="${OUT_DIR}/nxc_rid_brute.log"
 readonly NXC_USERS_LOG="${OUT_DIR}/nxc_users.log"
-readonly SMBCLIENT_LOG="${OUT_DIR}/smbclient_shares.log"
-readonly NXC_MODULES_LOG="${OUT_DIR}/nxc_modules.log"
+readonly USERS_FILE="${OUT_DIR}/users.txt"
+readonly RPC_LOG="${OUT_DIR}/rpcclient.log"
 readonly NXC_PASSPOL_LOG="${OUT_DIR}/nxc_passpol.log"
+readonly NXC_MODULES_LOG="${OUT_DIR}/nxc_modules.log"
 
 log_warning() {
     echo -e "${YELLOW}[!] $*${NC}"
@@ -70,7 +69,7 @@ section_header() {
 enum_nmap() {
     section_header "NMAP SMB SCRIPTS"
     nmap -Pn -p445 -sV \
-        --script "smb-protocols,smb2-capabilities,smb-security-mode,smb-os-discovery,smb-vuln-ms17-010" \
+        --script "smb-protocols,smb2-capabilities,smb-vuln-ms17-010" \
         "${TARGET_IP}" 2>&1 || log_warning "Nmap scan failed"
 }
 
@@ -81,16 +80,28 @@ enum_smbclient_shares() {
 
 enum_nxc_rid_brute() {
     section_header "NETEXEC - RID BRUTE FORCE"
-    nxc smb "${TARGET_IP}" -u "" -p "" --rid-brute 2>&1 | tee "${NXC_RID_LOG}" || log_warning "RID brute enumeration failed"
+    nxc smb "${TARGET_IP}" -u "guest" -p "" --rid-brute 2>&1 | tee "${NXC_RID_LOG}" || log_warning "RID brute enumeration failed"
+    nxc smb "${TARGET_IP}" -u "anonymous" -p "" --rid-brute 2>&1 | tee "${NXC_RID_LOG}" || log_warning "RID brute enumeration failed"
 }
 
 enum_nxc_users() {
     section_header "NETEXEC - USER ENUMERATION"
-    nxc smb "${TARGET_IP}" -u "" -p "" --users 2>&1 | tee "${NXC_USERS_LOG}" || log_warning "User enumeration failed"
+    nxc smb "${TARGET_IP}" -u "guest" -p "" --users 2>&1 | tee "${NXC_USERS_LOG}" || log_warning "User enumeration failed"
+    nxc smb "${TARGET_IP}" -u "anonymous" -p "" --users 2>&1 | tee "${NXC_USERS_LOG}" || log_warning "User enumeration failed"
+
+    # Extract usernames to users.txt
+    if [[ -f "${NXC_USERS_LOG}" ]]; then
+        awk '{print $5}' "${NXC_USERS_LOG}" | sed '1,3d;$d' | sort -u > "${USERS_FILE}" 2>/dev/null || true
+        if [[ -s "${USERS_FILE}" ]]; then
+            local user_count=$(wc -l < "${USERS_FILE}")
+            log_success "Extracted ${user_count} username(s) to: ${USERS_FILE}"
+        fi
+    fi
+
 }
 
 enum_rpcclient() {
-    section_header "RPCCLIENT - MSRPC ENUMERATION"
+    section_header "RPCCLIEN T- MSRPC ENUMERATION"
     {
         echo "srvinfo"
         echo "lsaquery"
@@ -109,7 +120,7 @@ enum_nxc_modules() {
     for module in "${modules[@]}"; do
         echo -e "\n${YELLOW}[>] Module: ${module}${NC}"
         {
-            nxc smb "${TARGET_IP}" -u '' -p '' -M "${module}" 2>&1
+            nxc smb "${TARGET_IP}" -u 'guest' -p '' -M "${module}" 2>&1
             nxc smb "${TARGET_IP}" -u 'anonymous' -p '' -M "${module}" 2>&1
         } | tee -a "${NXC_MODULES_LOG}" || true
     done
@@ -118,7 +129,7 @@ enum_nxc_modules() {
 enum_password_policy() {
     section_header "PASSWORD POLICY"
     {
-        nxc smb "${TARGET_IP}" -u '' -p '' --pass-pol 2>&1
+        nxc smb "${TARGET_IP}" -u 'guest' -p '' --pass-pol 2>&1
         nxc smb "${TARGET_IP}" -u 'anonymous' -p '' --pass-pol 2>&1
     } | tee "${NXC_PASSPOL_LOG}" || log_warning "Password policy enumeration failed"
 }
@@ -130,14 +141,11 @@ enum_enum4linux() {
 
 enum_smbmap() {
     section_header "SMBMAP - SHARE PERMISSIONS"
-    smbmap -H "${TARGET_IP}" -u '' 2>&1 || log_warning "smbmap with null session failed"
+    smbmap -H "${TARGET_IP}" -u 'guest' 2>&1 || log_warning "smbmap with null session failed"
     echo
     smbmap -H "${TARGET_IP}" -u 'anonymous' -p '' 2>&1 || log_warning "smbmap with anonymous failed"
 }
 
-prompt_download_shares() {
-	## WIP
-}
 
 print_summary() {
     section_header "ENUMERATION SUMMARY"
@@ -148,12 +156,8 @@ print_summary() {
     echo -e "${YELLOW}[!] ZEROLOGON (CVE-2020-1472) - Run manually if needed:${NC}"
     echo -e "    ${CYAN}nxc smb ${TARGET_IP} -u '' -p '' -M zerologon${NC}"
     echo
-    echo -e "${YELLOW}[!] If you have credentials, consider:${NC}"
-    echo -e "    ${CYAN}nxc smb ${TARGET_IP} -u <user> -p <pass> --shares${NC}"
-    echo -e "    ${CYAN}nxc smb ${TARGET_IP} -u <user> -p <pass> --sam${NC}"
-    echo -e "    ${CYAN}nxc smb ${TARGET_IP} -u <user> -p <pass> --lsa${NC}"
-    echo -e "    ${CYAN}nxc smb ${TARGET_IP} -u <user> -p <pass> -M spider_plus${NC}"
-    echo
+    echo -e "${YELLOW}[!] If you don't have credentials, consider using usernames as passwords or using cewl or username-anarchy${NC}"
+    echo 
 }
 
 # Main execution
