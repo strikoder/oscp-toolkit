@@ -81,20 +81,20 @@ enum_smbclient_shares() {
 enum_nxc_rid_brute() {
     section_header "NETEXEC - RID BRUTE FORCE"
     nxc smb "${TARGET_IP}" -u "guest" -p "" --rid-brute 2>&1 | tee "${NXC_RID_LOG}" || log_warning "RID brute enumeration failed"
-    nxc smb "${TARGET_IP}" -u "anonymous" -p "" --rid-brute 2>&1 | tee "${NXC_RID_LOG}" || log_warning "RID brute enumeration failed"
+    nxc smb "${TARGET_IP}" -u "" -p "" --rid-brute 2>&1 | tee "${NXC_RID_LOG}" || log_warning "RID brute enumeration failed"
 }
 
 enum_nxc_users() {
     section_header "NETEXEC - USER ENUMERATION"
     nxc smb "${TARGET_IP}" -u "guest" -p "" --users 2>&1 | tee "${NXC_USERS_LOG}" || log_warning "User enumeration failed"
-    nxc smb "${TARGET_IP}" -u "anonymous" -p "" --users 2>&1 | tee "${NXC_USERS_LOG}" || log_warning "User enumeration failed"
+    nxc smb "${TARGET_IP}" -u "" -p "" --users 2>&1 | tee "${NXC_USERS_LOG}" || log_warning "User enumeration failed"
 
     # Extract usernames to users.txt
     if [[ -f "${NXC_USERS_LOG}" ]]; then
         awk '{print $5}' "${NXC_USERS_LOG}" | sed '1,3d;$d' | sort -u > "${USERS_FILE}" 2>/dev/null || true
         if [[ -s "${USERS_FILE}" ]]; then
             local user_count=$(wc -l < "${USERS_FILE}")
-            log_success "Extracted ${user_count} username(s) to: ${USERS_FILE}"
+            echo "Extracted ${user_count} username(s) to: ${USERS_FILE}"
         fi
     fi
 
@@ -121,7 +121,7 @@ enum_nxc_modules() {
         echo -e "\n${YELLOW}[>] Module: ${module}${NC}"
         {
             nxc smb "${TARGET_IP}" -u 'guest' -p '' -M "${module}" 2>&1
-            nxc smb "${TARGET_IP}" -u 'anonymous' -p '' -M "${module}" 2>&1
+            nxc smb "${TARGET_IP}" -u '' -p '' -M "${module}" 2>&1
         } | tee -a "${NXC_MODULES_LOG}" || true
     done
 }
@@ -130,7 +130,7 @@ enum_password_policy() {
     section_header "PASSWORD POLICY"
     {
         nxc smb "${TARGET_IP}" -u 'guest' -p '' --pass-pol 2>&1
-        nxc smb "${TARGET_IP}" -u 'anonymous' -p '' --pass-pol 2>&1
+        nxc smb "${TARGET_IP}" -u '' -p '' --pass-pol 2>&1
     } | tee "${NXC_PASSPOL_LOG}" || log_warning "Password policy enumeration failed"
 }
 
@@ -143,7 +143,7 @@ enum_smbmap() {
     section_header "SMBMAP - SHARE PERMISSIONS"
     smbmap -H "${TARGET_IP}" -u 'guest' 2>&1 || log_warning "smbmap with null session failed"
     echo
-    smbmap -H "${TARGET_IP}" -u 'anonymous' -p '' 2>&1 || log_warning "smbmap with anonymous failed"
+    smbmap -H "${TARGET_IP}" -u '' -p '' 2>&1 || log_warning "smbmap with  failed"
 }
 
 
